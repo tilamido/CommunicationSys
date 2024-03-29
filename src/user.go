@@ -29,12 +29,12 @@ func (u *User) UserListening() {
 
 	for {
 		msg := <-u.C
-		fmt.Println("UserListening\n", "msg: ", msg)
-		// _, err := u.myconn.Write([]byte(msg + "\n"))
-		// if err != nil {
-		// 	fmt.Println("Error writing:", err.Error())
-		// 	return
-		// }
+		// fmt.Println("UserListening\n", "msg: ", msg)
+		_, err := u.myconn.Write([]byte(msg + "\n"))
+		if err != nil {
+			fmt.Println("Error writing:", err.Error())
+			return
+		}
 	}
 
 }
