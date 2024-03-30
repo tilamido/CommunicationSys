@@ -1,31 +1,71 @@
-// 文件名：client/main.go
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
+	"os"
+	"strings"
+	"sync"
 )
 
 func main() {
-
-	// 建立 TCP 连接
 	conn, err := net.Dial("tcp", "127.0.0.1:8888")
 	if err != nil {
 		fmt.Println("Error connecting:", err.Error())
 		return
 	}
 	defer conn.Close()
+	var wg sync.WaitGroup
 
-	for {
-		// 读取来自服务器的响应
-		buffer := make([]byte, 1024)
-		n, err := conn.Read(buffer)
-		if err != nil {
-			fmt.Println("Error reading from server:", err.Error())
-			break
+	stopCh := make(chan struct{})
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		reader := bufio.NewReader(os.Stdin)
+		for {
+			fmt.Print("请输入消息：")
+			input, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading from stdin:", err)
+				close(stopCh)
+				return
+			}
+			input = strings.TrimSpace(input)
+			if input == "exit" {
+				close(stopCh)
+				return
+			}
+			if _, err := conn.Write([]byte(input + "\n")); err != nil {
+				fmt.Println("Error writing to server:", err)
+				close(stopCh)
+				return
+			}
 		}
-		// 打印来自服务器的消息
-		fmt.Printf("Received: %s\n", string(buffer[:n]))
-	}
+	}()
 
+	go func() {
+		defer wg.Done()
+		buffer := make([]byte, 1024)
+		for {
+			select {
+			case <-stopCh:
+				return
+			default:
+				n, err := conn.Read(buffer)
+				if err != nil {
+					fmt.Println("Error reading from server:", err.Error())
+					close(stopCh)
+					return
+				}
+				fmt.Printf("Received: %s\n", string(buffer[:n]))
+			}
+		}
+	}()
+
+	<-stopCh
+	conn.Close() // 关闭网络连接以确保conn.Read退出阻塞
+	wg.Wait()
+	fmt.Println("Disconnected from server")
 }

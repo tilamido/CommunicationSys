@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"sync"
 )
@@ -32,6 +33,28 @@ func (s *Server) Handler(conn net.Conn) {
 	s.MapUsers[user.Name] = user
 	s.mapLock.Unlock()
 	s.BoradCast(user, "已上线")
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := conn.Read(buf)
+			if n == 0 {
+				s.BoradCast(user, "已下线")
+				s.mapLock.Lock()
+				delete(s.MapUsers, user.Name)
+				s.mapLock.Unlock()
+				return
+			}
+			if err != nil && err != io.EOF {
+				fmt.Print("Conn.Read err:", err)
+				return
+			}
+			msg := buf[:n-1]
+			s.BoradCast(user, string(msg))
+			//Output:
+
+		}
+
+	}()
 	select {}
 }
 
@@ -56,6 +79,7 @@ func (s *Server) Start() {
 		return
 	}
 	defer listener.Close()
+	fmt.Print("服务器启动")
 	go s.ListenMsg()
 	for {
 		conn, err := listener.Accept()
