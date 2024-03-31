@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 
 type User struct {
@@ -51,6 +52,8 @@ func (u *User) Dealmsg(msg string) {
 		u.Checkusers(msg)
 	} else if len(msg) > 6 && msg[:6] == "rename" {
 		u.Rename(msg)
+	} else if len(msg) > 2 && msg[:2] == "to" {
+		u.SendTOUser(msg)
 	} else {
 		u.server.BoradCast(u, msg)
 	}
@@ -88,6 +91,17 @@ func (u *User) SendMsg(msg string) {
 		fmt.Println("User发送数据到客户端失败:", err)
 		return
 	}
+}
+func (u *User) SendTOUser(msg string) {
+	srcname := u.Name
+	recvname := strings.Split(msg, " ")[1]
+	contexts := strings.Split(msg, " ")[2]
+	recvUser, ok := u.server.MapUsers[recvname]
+	if !ok {
+		u.SendMsg(fmt.Sprintf("用户[%s]不存在", recvname))
+		return
+	}
+	recvUser.SendMsg(fmt.Sprintf("用户[%s]私聊:%s", srcname, string(contexts)))
 }
 
 func (u *User) UserListening() {
