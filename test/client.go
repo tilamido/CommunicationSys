@@ -25,7 +25,7 @@ func main() {
 		defer wg.Done()
 		reader := bufio.NewReader(os.Stdin)
 		for {
-			fmt.Print("请输入消息：")
+			fmt.Print("请输入消息：\n")
 			input, err := reader.ReadString('\n')
 			if err != nil {
 				fmt.Println("Error reading from stdin:", err)
