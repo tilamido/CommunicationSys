@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net"
-	"sync"
 )
 
 type User struct {
@@ -13,7 +12,6 @@ type User struct {
 	myconn net.Conn
 	server *Server
 	done   chan bool
-	once   sync.Once // 添加这一行
 }
 
 func NewUser(conn net.Conn, server *Server) *User {
@@ -34,19 +32,18 @@ func (u *User) Online() {
 	u.server.mapLock.Lock()
 	u.server.MapUsers[u.Name] = u
 	u.server.mapLock.Unlock()
-	u.server.BoradCast(u, "已上线")
+	u.server.BoradCast(u, "已上线\n")
 
 }
 
 func (u *User) Offline() {
-	u.once.Do(func() { // 使用once.Do包裹下线逻辑
-		u.server.mapLock.Lock()
-		delete(u.server.MapUsers, u.Name)
-		u.server.mapLock.Unlock()
-		u.server.BoradCast(u, "已下线")
-		u.done <- true
-		close(u.done)
-	})
+	u.server.mapLock.Lock()
+	delete(u.server.MapUsers, u.Name)
+	u.server.mapLock.Unlock()
+	u.server.BoradCast(u, "已下线")
+	u.done <- true
+	close(u.done)
+
 }
 
 func (u *User) Dealmsg(msg string) {
@@ -86,8 +83,9 @@ func (u *User) Rename(msg string) {
 }
 
 func (u *User) SendMsg(msg string) {
-	if _, err := u.myconn.Write([]byte(msg)); err != nil {
-		fmt.Println("Error writing to server:", err)
+	_, err := u.myconn.Write([]byte(msg))
+	if err != nil {
+		fmt.Println("User发送数据到客户端失败:", err)
 		return
 	}
 }

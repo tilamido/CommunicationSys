@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,36 +34,40 @@ func (s *Server) Handler(conn net.Conn) {
 	user := NewUser(conn, s)
 	user.Online()
 
-	isLive := make(chan bool)
-
+	timeout := 60 * time.Second
+	readCh := make(chan string)
+	errCh := make(chan error)
 	go func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := conn.Read(buf)
-			if n == 0 {
-				user.Offline()
-				return
-			}
-			if err != nil {
-				if err != io.EOF {
-					fmt.Printf("读取错误：%s\n", err)
-				} else {
-					fmt.Printf("客户端关闭连接：%s\n", conn.RemoteAddr().String())
+			if n == 0 || err != nil {
+				if n == 0 {
+					err = io.EOF
 				}
+				errCh <- err
 				return
 			}
-			msg := buf[:n-1]
-			user.Dealmsg(string(msg))
-			isLive <- true
-		}
+			msg := strings.TrimSpace(string(buf[:n]))
+			readCh <- msg
 
+		}
 	}()
 
 	for {
 		select {
-		case <-isLive:
+		case msg := <-readCh:
 			fmt.Printf("用户[%s]处理消息\n", user.Name)
-		case <-time.After(20 * time.Second):
+			user.Dealmsg(string(msg))
+		case err := <-errCh:
+			if err == io.EOF {
+				fmt.Printf("用户[%s]断开连接\n", user.Name)
+			} else {
+				fmt.Printf("端口读消息出错: %s\n", err)
+			}
+			user.Offline()
+			return
+		case <-time.After(timeout):
 			fmt.Printf("用户[%s]长时间未响应\n", user.Name)
 			user.SendMsg("长时间未响应，已强制下线")
 			user.Offline()
@@ -73,9 +78,8 @@ func (s *Server) Handler(conn net.Conn) {
 }
 
 func (s *Server) BoradCast(user *User, msg string) {
-
-	sendMsg := "用户-" + user.Name + ":" + msg
-	s.Msg <- sendMsg
+	boradMsg := fmt.Sprintf("[用户 %s]:%s", user.Name, msg)
+	s.Msg <- boradMsg
 }
 func (s *Server) ListenMsg() {
 	for {
