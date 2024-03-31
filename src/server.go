@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type Server struct {
@@ -28,37 +29,51 @@ func NewSever(ip string, port int) *Server {
 
 func (s *Server) Handler(conn net.Conn) {
 	defer conn.Close()
-	user := NewUser(conn)
-	s.mapLock.Lock()
-	s.MapUsers[user.Name] = user
-	s.mapLock.Unlock()
-	s.BoradCast(user, "已上线")
+
+	user := NewUser(conn, s)
+	user.Online()
+
+	isLive := make(chan bool)
+
 	go func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := conn.Read(buf)
 			if n == 0 {
-				s.BoradCast(user, "已下线")
-				s.mapLock.Lock()
-				delete(s.MapUsers, user.Name)
-				s.mapLock.Unlock()
+				user.Offline()
 				return
 			}
-			if err != nil && err != io.EOF {
-				fmt.Print("Conn.Read err:", err)
+			if err != nil {
+				if err != io.EOF {
+					fmt.Printf("读取错误：%s\n", err)
+				} else {
+					fmt.Printf("客户端关闭连接：%s\n", conn.RemoteAddr().String())
+				}
 				return
 			}
 			msg := buf[:n-1]
-			s.BoradCast(user, string(msg))
-			//Output:
-
+			user.Dealmsg(string(msg))
+			isLive <- true
 		}
 
 	}()
-	select {}
+
+	for {
+		select {
+		case <-isLive:
+			fmt.Printf("用户[%s]处理消息\n", user.Name)
+		case <-time.After(20 * time.Second):
+			fmt.Printf("用户[%s]长时间未响应\n", user.Name)
+			user.SendMsg("长时间未响应，已强制下线")
+			user.Offline()
+			return
+		}
+	}
+
 }
 
 func (s *Server) BoradCast(user *User, msg string) {
+
 	sendMsg := "用户-" + user.Name + ":" + msg
 	s.Msg <- sendMsg
 }
@@ -67,7 +82,7 @@ func (s *Server) ListenMsg() {
 		msg := <-s.Msg
 		s.mapLock.Lock()
 		for _, client := range s.MapUsers {
-			client.C <- msg
+			client.MyMsg <- msg
 		}
 		s.mapLock.Unlock()
 	}
@@ -79,7 +94,7 @@ func (s *Server) Start() {
 		return
 	}
 	defer listener.Close()
-	fmt.Print("服务器启动")
+	fmt.Print("服务器启动，等待连接...\n")
 	go s.ListenMsg()
 	for {
 		conn, err := listener.Accept()
